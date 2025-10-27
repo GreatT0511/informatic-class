@@ -1,0 +1,212 @@
+// Conway's Game of Life (p5.js) — Gosper Glider Gun + UI + Grid Lines + 静止判定
+// 2025-10版: UI強化・速度調整・1世代送り・リセット・静止状態検出
+
+let cols = 100, rows = 100;
+let scaleFactor = 4;
+let grid, nextGrid;
+let running = true;
+let generation = 0;
+
+// 速度制御
+let ups = 10, minUPS = 1, maxUPS = 60;
+let accumulatorMs = 0, lastMillis = 0;
+
+// UI
+let sliderUPS, labelUPS, btnPlayPause, btnStep, btnReset, labelGen, labelStatus;
+
+// 前世代比較用
+let prevHash = "";
+
+function setup() {
+  createCanvas(cols * scaleFactor, rows * scaleFactor);
+  pixelDensity(1);
+  initGrids();
+  placeGosper(grid, 20, 20);
+  createUI();
+  lastMillis = millis();
+}
+
+function draw() {
+  background(255);
+  drawGrid();
+
+  ups = sliderUPS.value();
+  labelUPS.html(`速度：${nf(ups, 1, 0)} 世代/秒`);
+  labelGen.html(`世代：${generation}`);
+
+  const now = millis();
+  const dt = now - lastMillis;
+  lastMillis = now;
+
+  if (running) {
+    accumulatorMs += dt;
+    const interval = 1000.0 / ups;
+    while (accumulatorMs >= interval) {
+      const changed = stepOnce();
+      accumulatorMs -= interval;
+      // 静止判定
+      if (!changed) {
+        running = false;
+        labelStatus.html("🟢 静止状態に到達");
+      } else {
+        labelStatus.html("");
+      }
+    }
+  }
+}
+
+function initGrids() {
+  grid = make2D(rows, cols, 0);
+  nextGrid = make2D(rows, cols, 0);
+  generation = 0;
+  accumulatorMs = 0;
+  prevHash = "";
+}
+
+function drawGrid() {
+  // セル描画
+  noStroke();
+  fill(20);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (grid[y][x]) {
+        rect(x * scaleFactor, y * scaleFactor, scaleFactor, scaleFactor);
+      }
+    }
+  }
+
+  // グリッド線（薄灰）
+  stroke(220);
+  strokeWeight(1);
+  for (let x = 0; x <= cols; x++) {
+    line(x * scaleFactor, 0, x * scaleFactor, height);
+  }
+  for (let y = 0; y <= rows; y++) {
+    line(0, y * scaleFactor, width, y * scaleFactor);
+  }
+}
+
+function stepOnce() {
+  let changed = false;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const yy = y + dy, xx = x + dx;
+          if (yy >= 0 && yy < rows && xx >= 0 && xx < cols) n += grid[yy][xx];
+        }
+      }
+      const alive = grid[y][x] === 1;
+      const next = (alive && (n === 2 || n === 3)) || (!alive && n === 3) ? 1 : 0;
+      nextGrid[y][x] = next;
+      if (next !== grid[y][x]) changed = true;
+    }
+  }
+
+  // ハッシュで前回と比較しても変化がない場合は停止（振動対策）
+  const newHash = hashGrid(nextGrid);
+  if (newHash === prevHash) changed = false;
+  prevHash = newHash;
+
+  let tmp = grid; grid = nextGrid; nextGrid = tmp;
+  generation++;
+  return changed;
+}
+
+function make2D(r, c, v = 0) {
+  const a = new Array(r);
+  for (let i = 0; i < r; i++) a[i] = new Array(c).fill(v);
+  return a;
+}
+
+function hashGrid(G) {
+  // 軽量ハッシュ（生存セルの数と簡易xor）
+  let count = 0, xor = 0;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (G[y][x]) {
+        count++;
+        xor ^= (x * 73856093) ^ (y * 19349663);
+      }
+    }
+  }
+  return count + ":" + xor;
+}
+
+function placeGosper(G, ox, oy) {
+  const cells = [
+    [0,4],[0,5],[1,4],[1,5],
+    [10,4],[10,5],[10,6],
+    [11,3],[11,7],
+    [12,2],[12,8],
+    [13,2],[13,8],
+    [14,5],
+    [15,3],[15,7],
+    [16,4],[16,5],[16,6],
+    [17,5],
+    [20,2],[20,3],[20,4],
+    [21,2],[21,3],[21,4],
+    [22,1],[22,5],
+    [24,0],[24,1],[24,5],[24,6],
+    [34,2],[34,3],
+    [35,2],[35,3]
+  ];
+  for (const [dx, dy] of cells) {
+    const x = ox + dx, y = oy + dy;
+    if (y >= 0 && y < rows && x >= 0 && x < cols) G[y][x] = 1;
+  }
+}
+
+function createUI() {
+  const container = createDiv().style('margin-top', '8px');
+  sliderUPS = createSlider(minUPS, maxUPS, ups, 1).parent(container);
+  sliderUPS.style('width', '240px');
+  labelUPS = createSpan(`速度：${ups} 世代/秒`).parent(container);
+  createSpan('　').parent(container);
+  btnPlayPause = createButton('⏯ 再生/一時停止').parent(container);
+  btnPlayPause.mousePressed(() => {
+    running = !running;
+    if (!running) accumulatorMs = 0;
+  });
+  createSpan(' ').parent(container);
+  btnStep = createButton('➡ 1世代送り').parent(container);
+  btnStep.mousePressed(() => {
+    if (running) running = false;
+    const changed = stepOnce();
+    labelStatus.html(changed ? "" : "🟢 静止状態に到達");
+  });
+  createSpan(' ').parent(container);
+  btnReset = createButton('🗘 リセット').parent(container);
+  btnReset.mousePressed(() => {
+    initGrids();
+    placeGosper(grid, 20, 20);
+    running = true;
+    labelStatus.html("");
+  });
+  createElement('br').parent(container);
+  labelGen = createSpan(`世代：${generation}`).parent(container);
+  labelGen.style('font-weight', 'bold');
+  createElement('br').parent(container);
+  labelStatus = createSpan('').parent(container);
+  labelStatus.style('color', '#007700');
+  labelStatus.style('font-weight', 'bold');
+}
+
+function keyPressed() {
+  if (key === ' ') {
+    running = !running;
+    if (!running) accumulatorMs = 0;
+  } else if (key === 'N' || keyCode === RIGHT_ARROW) {
+    if (running) running = false;
+    const changed = stepOnce();
+    labelStatus.html(changed ? "" : "🟢 静止状態に到達");
+  } else if (key === 'R' || key === 'r') {
+    initGrids();
+    placeGosper(grid, 20, 20);
+    running = true;
+    labelStatus.html("");
+  }
+}
+
