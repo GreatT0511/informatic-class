@@ -1,0 +1,180 @@
+// --- 修正版: Conway's Game of Life (クリックでセルON/OFF、右クリックまたはボタンでスタート) ---
+let cols, rows, cellSize;
+let grid, nextGrid;
+let running = false;
+let started = false;
+
+let btnStart, btnPause, btnStep, btnClear, btnRandom;
+let speedSlider, speedLabel;
+let isStatic = false;
+let acc = 0;
+
+function setup() {
+  createCanvas(Math.min(windowWidth - 20, 800), Math.min(windowHeight - 140, 800));
+  calcGrid();
+  makeGrids();
+  makeUI();
+  frameRate(60);
+}
+
+function calcGrid() {
+  const target = 50;
+  cellSize = floor(min(width, height) / target);
+  cols = floor(width / cellSize);
+  rows = floor(height / cellSize);
+}
+
+function makeGrids() {
+  grid = create2D(rows, cols, 0);
+  nextGrid = create2D(rows, cols, 0);
+}
+
+function makeUI() {
+  const y = height + 10;
+
+  btnStart = createButton('▶ Start');
+  btnStart.position(10, y);
+  btnStart.mousePressed(() => { started = true; running = true; });
+
+  btnPause = createButton('⏸ Pause');
+  btnPause.position(btnStart.x + btnStart.width + 8, y);
+  btnPause.mousePressed(() => running = false);
+
+  btnStep = createButton('⏩ Step +1');
+  btnStep.position(btnPause.x + btnPause.width + 8, y);
+  btnStep.mousePressed(() => { started = true; running = false; stepOnce(); });
+
+  btnClear = createButton('🧹 Clear');
+  btnClear.position(btnStep.x + btnStep.width + 8, y);
+  btnClear.mousePressed(() => { running = false; started = false; fill2D(grid, 0); });
+
+  btnRandom = createButton('🎲 Random');
+  btnRandom.position(btnClear.x + btnClear.width + 8, y);
+  btnRandom.mousePressed(() => { running = false; started = false; randomizeGrid(0.2); });
+
+  speedLabel = createSpan('Speed: ');
+  speedLabel.position(btnRandom.x + btnRandom.width + 16, y + 3);
+
+  speedSlider = createSlider(1, 60, 10, 1);
+  speedSlider.position(speedLabel.x + speedLabel.width + 4, y + 3);
+}
+
+function draw() {
+  background(255);
+  drawGridLines();
+  drawCells();
+
+  const gensPerSec = speedSlider.value();
+  const dt = deltaTime / 1000.0;
+  if (running) {
+    acc += dt;
+    const interval = 1.0 / gensPerSec;
+    while (acc >= interval) {
+      acc -= interval;
+      updateOnce();
+    }
+  }
+
+  // 状態表示
+  noStroke();
+  fill(0, 120);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text(`Size: ${rows}x${cols} | Running: ${running ? 'Yes' : 'No'}`, 8, 8);
+
+  if (isStatic) {
+    fill(0, 180);
+    textAlign(RIGHT, TOP);
+    text('静止', width - 8, 8);
+  }
+}
+
+function mousePressed() {
+  // 左クリック：セルON/OFF
+  if (mouseButton === LEFT && mouseY < height) {
+    if (!running) {
+      const i = floor(mouseY / cellSize);
+      const j = floor(mouseX / cellSize);
+      if (i >= 0 && i < rows && j >= 0 && j < cols) {
+        grid[i][j] = grid[i][j] ? 0 : 1;
+      }
+    }
+  }
+  // 右クリックで開始（またはボタンでも開始可能）
+  if (mouseButton === RIGHT) {
+    started = true;
+    running = true;
+    return false; // ブラウザの右クリックメニュー抑止
+  }
+}
+
+function drawCells() {
+  noStroke();
+  fill(30);
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      if (grid[i][j]) rect(j * cellSize, i * cellSize, cellSize, cellSize);
+    }
+  }
+}
+
+function drawGridLines() {
+  stroke(220);
+  strokeWeight(1);
+  for (let x = 0; x <= cols; x++) line(x * cellSize, 0, x * cellSize, rows * cellSize);
+  for (let y = 0; y <= rows; y++) line(0, y * cellSize, cols * cellSize, y * cellSize);
+}
+
+function stepOnce() {
+  updateOnce();
+}
+
+function updateOnce() {
+  let next = create2D(rows, cols, 0);
+  isStatic = true;
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      const n = countNeighbors(i, j);
+      const alive = grid[i][j] === 1;
+      let newVal = (alive && (n === 2 || n === 3)) || (!alive && n === 3) ? 1 : 0;
+      next[i][j] = newVal;
+      if (newVal !== grid[i][j]) isStatic = false;
+    }
+  }
+  grid = next;
+}
+
+function countNeighbors(r, c) {
+  let sum = 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const rr = r + dr, cc = c + dc;
+      if (rr >= 0 && rr < rows && cc >= 0 && cc < cols) sum += grid[rr][cc];
+    }
+  }
+  return sum;
+}
+
+function create2D(r, c, v) {
+  return Array.from({ length: r }, () => Array(c).fill(v));
+}
+
+function fill2D(a, v) {
+  for (let i = 0; i < a.length; i++) a[i].fill(v);
+}
+
+function randomizeGrid(p = 0.25) {
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) grid[i][j] = random() < p ? 1 : 0;
+  }
+}
+
+function windowResized() {
+  resizeCanvas(Math.min(windowWidth - 20, 800), Math.min(windowHeight - 140, 800));
+  calcGrid();
+  makeGrids();
+  running = false;
+  started = false;
+  acc = 0;
+}
